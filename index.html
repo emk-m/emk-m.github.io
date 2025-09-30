@@ -1,1 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cinematic Motion Detector</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 1rem;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        .canvas-container {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        #canvasContainer {
+            background: black;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            min-height: 600px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .controls-bar {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-upload {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-upload:hover:not(:disabled) {
+            background: #2563eb;
+            transform: translateY(-2px);
+        }
+
+        .btn-play {
+            background: #10b981;
+            color: white;
+        }
+        
+
+        .btn-play:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+
+        .controls-panel {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 25px;
+            font-size: 1.3rem;
+            font-weight: bold;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-label {
+            display: block;
+            font-size: 13px;
+            color: #cbd5e1;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #334155;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #2563eb;
+            transform: scale(1.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: none;
+        }
+
+        .value-display {
+            display: block;
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .info-box {
+            margin-top: 25px;
+            padding: 15px;
+            background: #0f172a;
+            border-radius: 8px;
+        }
+
+        .info-box h3 {
+            font-size: 13px;
+            color: #60a5fa;
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            list-style: none;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .info-box li {
+            margin-bottom: 6px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #debugLog {
+            margin-top: 15px;
+            padding: 10px;
+            background: #0f172a;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Cinematic Motion Detector</h1>
+            <p>Post-production motion enhancement for subtle natural movements</p>
+        </div>
+
+        <div class="main-content">
+            <div class="canvas-container">
+                <div id="canvasContainer"></div>
+                
+                <div class="controls-bar">
+                    <button class="btn-upload" id="uploadBtn">
+                        📤 Upload Video
+                    </button>
+                    <button class="btn-play" id="playBtn" disabled>
+                        ▶️ Play
+                    </button>
+                    <button class="btn-upload" id="exportBtn" disabled>
+                        🎥 Export Video
+                    </button>
+                    
+                </div>
+                
+                <input type="file" id="videoUpload" accept="video/*">
+                
+                <div id="debugLog">
+                    <strong>Debug Log:</strong><br>
+                    Waiting for video upload...
+                </div>
+            </div>
+
+            <div class="controls-panel">
+                <div class="panel-header">
+                    ⚙️ Effects Controls
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">💨 Motion Sensitivity</label>
+                    <input type="range" id="sensitivity" min="3" max="30" value="8">
+                    <span class="value-display" id="sensitivity-val">8</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">✨ Particle Density</label>
+                    <input type="range" id="particleDensity" min="0" max="15" step="0.5" value="5">
+                    <span class="value-display" id="particleDensity-val">5</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">👻 Ghost Trails</label>
+                    <input type="range" id="ghostTrails" min="0" max="20" value="12">
+                    <span class="value-display" id="ghostTrails-val">12</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">🌟 Glow Intensity</label>
+                    <input type="range" id="glowIntensity" min="0" max="3" step="0.1" value="1.8">
+                    <span class="value-display" id="glowIntensity-val">1.8</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">🌫️ Trail Fade</label>
+                    <input type="range" id="trailFade" min="0.7" max="0.99" step="0.01" value="0.95">
+                    <span class="value-display" id="trailFade-val">0.95</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">💫 Motion Blur</label>
+                    <input type="range" id="motionBlur" min="0" max="0.5" step="0.05" value="0.15">
+                    <span class="value-display" id="motionBlur-val">0.15</span>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">⏱️ Time Stretch</label>
+                    <input type="range" id="timeStretch" min="1" max="5" step="1" value="2">
+                    <span class="value-display" id="timeStretch-val">2</span>
+                </div>
+
+                <div class="info-box">
+                    <h3>Features:</h3>
+                    <ul>
+                        <li>• True grayscale conversion</li>
+                        <li>• Multi-layered ghost trails</li>
+                        <li>• Amplified motion detection</li>
+                        <li>• Time stretch (slow motion)</li>
+                        <li>• Stronger glow halos</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let myp5;
+        let videoElement;
+        let capture;
+        let prevFrame;
+        let motionHistory = [];
+        let particles = [];
+        let isPlaying = false;
+        let videoLoaded = false;
+
+        // Parameters
+        let params = {
+            sensitivity: 8,
+            motionTrailLength: 50,
+            particleDensity: 5,
+            colorEnhancement: 1.0,
+            glowIntensity: 1.8,
+            ghostTrails: 12,
+            warmTone: 1.0,
+            coolTone: 1.0,
+            trailFade: 0.95,
+            motionBlur: 0.15,
+            timeStretch: 2
+        };
+
+        function log(msg) {
+            const debugLog = document.getElementById('debugLog');
+            debugLog.innerHTML += '<br>' + msg;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(msg);
+        }
+
+        // p5.js sketch
+        const sketch = (p) => {
+            
+            class MotionParticle {
+                constructor(x, y, intensity) {
+                    this.x = x;
+                    this.y = y;
+                    this.vx = p.random(-0.5, 0.5);
+                    this.vy = p.random(-0.5, 0.5);
+                    this.life = 255;
+                    this.intensity = intensity;
+                    this.size = p.random(1, 3);
+                    this.hue = p.map(intensity, 0, 255, 180, 40);
+                }
+                
+                update() {
+                    this.x += this.vx;
+                    this.y += this.vy;
+                    this.life -= 8;
+                    this.vx *= 0.98;
+                    this.vy *= 0.98;
+                }
+                
+                display() {
+                    p.push();
+                    p.colorMode(p.HSB);
+                    p.noStroke();
+                    let alpha = p.map(this.life, 0, 255, 0, 200);
+                    p.fill(this.hue, 80, 100, alpha);
+                    p.circle(this.x, this.y, this.size);
+                    
+                    p.fill(this.hue, 60, 100, alpha * 0.3);
+                    p.circle(this.x, this.y, this.size * 3);
+                    p.pop();
+                }
+                
+                isDead() {
+                    return this.life <= 0;
+                }
+            }
+
+            p.setup = () => {
+                p.createCanvas(800, 600).parent('canvasContainer');
+                p.colorMode(p.RGB);
+                prevFrame = p.createImage(800, 600);
+                log('p5.js setup complete');
+            };
+
+            p.draw = () => {
+                // Motion blur effect with transparency
+                p.push();
+                p.fill(0, 255 * params.motionBlur);
+                p.noStroke();
+                p.rect(0, 0, p.width, p.height);
+                p.pop();
+                
+                if (!videoLoaded || !capture) {
+                    p.fill(150);
+                    p.textAlign(p.CENTER, p.CENTER);
+                    p.textSize(16);
+                    p.text('Upload a video to begin', p.width/2, p.height/2);
+                    return;
+                }
+                
+                // Convert video to grayscale and draw
+                capture.loadPixels();
+                let grayImg = p.createImage(capture.width, capture.height);
+                grayImg.loadPixels();
+                
+                for (let i = 0; i < capture.pixels.length; i += 4) {
+                    let r = capture.pixels[i];
+                    let g = capture.pixels[i + 1];
+                    let b = capture.pixels[i + 2];
+                    let gray = (r + g + b) / 3;
+                    
+                    grayImg.pixels[i] = gray;
+                    grayImg.pixels[i + 1] = gray;
+                    grayImg.pixels[i + 2] = gray;
+                    grayImg.pixels[i + 3] = 255;
+                }
+                grayImg.updatePixels();
+                
+                p.push();
+                p.tint(255);
+                p.image(grayImg, 0, 0, 800, 600);
+                p.pop();
+                
+                p.loadPixels();
+                grayImg.loadPixels();
+                
+                if (prevFrame.pixels.length > 0) {
+                    prevFrame.loadPixels();
+                    
+                    let motionMap = [];
+                    
+                    for (let y = 0; y < grayImg.height; y += 2) {
+                        for (let x = 0; x < grayImg.width; x += 2) {
+                            let index = (x + y * grayImg.width) * 4;
+                            
+                            let gray1 = grayImg.pixels[index];
+                            let gray2 = prevFrame.pixels[index];
+                            
+                            let diff = p.abs(gray1 - gray2) * 3; // Amplify difference
+                            
+                            if (diff > params.sensitivity) {
+                                motionMap.push({x, y, intensity: diff});
+                                
+                                if (p.random(100) < params.particleDensity) {
+                                    particles.push(new MotionParticle(x, y, diff));
+                                }
+                            }
+                        }
+                    }
+                    
+                    motionHistory.push(motionMap);
+                    if (motionHistory.length > params.motionTrailLength) {
+                        motionHistory.shift();
+                    }
+                    
+                    // Ghost trails with longer persistence - MUCH STRONGER
+                    p.push();
+                    p.blendMode(p.ADD);
+                    for (let t = 0; t < params.ghostTrails && t < motionHistory.length; t++) {
+                        let alpha = p.map(t, 0, params.ghostTrails, 200, 30) * params.trailFade;
+                        let history = motionHistory[motionHistory.length - 1 - t];
+                        
+                        if (history) {
+                            for (let motion of history) {
+                                let intensity = p.constrain(motion.intensity * 1.5, 0, 255);
+                                
+                                // Multiple layers for stronger trails
+                                for (let layer = 0; layer < 3; layer++) {
+                                    p.fill(255, alpha / (layer + 1));
+                                    p.noStroke();
+                                    p.circle(motion.x, motion.y, 8 + motion.intensity * 0.12 + layer * 4);
+                                }
+                            }
+                        }
+                    }
+                    p.pop();
+                    
+                    // Particles - monochrome
+                    p.colorMode(p.RGB);
+                    for (let i = particles.length - 1; i >= 0; i--) {
+                        particles[i].update();
+                        
+                        // Draw white particles
+                        p.push();
+                        p.noStroke();
+                        let alpha = p.map(particles[i].life, 0, 255, 0, 200);
+                        p.fill(255, alpha);
+                        p.circle(particles[i].x, particles[i].y, particles[i].size);
+                        
+                        p.fill(255, alpha * 0.3);
+                        p.circle(particles[i].x, particles[i].y, particles[i].size * 3);
+                        p.pop();
+                        
+                        if (particles[i].isDead()) {
+                            particles.splice(i, 1);
+                        }
+                    }
+                    
+                    // Motion highlights - MUCH STRONGER white glow
+                    p.push();
+                    p.blendMode(p.ADD);
+                    for (let motion of motionMap) {
+                        let intensity = p.constrain(motion.intensity, 0, 255);
+                        
+                        p.noStroke();
+                        
+                        // More layers with stronger glow
+                        for (let glow = 6; glow > 0; glow--) {
+                            let glowAlpha = 60 / glow * params.glowIntensity;
+                            p.fill(255, glowAlpha);
+                            p.circle(motion.x, motion.y, glow * 12);
+                        }
+                    }
+                    p.pop();
+                }
+                
+                p.updatePixels();
+                
+                prevFrame.copy(capture, 0, 0, capture.width, capture.height, 
+                              0, 0, prevFrame.width, prevFrame.height);
+                
+                // Info overlay
+                p.push();
+                p.fill(0, 180);
+                p.noStroke();
+                p.rect(10, 10, 250, 60);
+                p.fill(255);
+                p.textSize(12);
+                p.textAlign(p.LEFT, p.TOP);
+                p.text(`Active Particles: ${particles.length}`, 20, 25);
+                p.text(`Motion Regions: ${motionHistory.length > 0 ? motionHistory[motionHistory.length - 1].length : 0}`, 20, 45);
+                p.pop();
+            };
+        };
+
+        // Initialize p5
+        myp5 = new p5(sketch);
+
+        // File upload handler
+        document.getElementById('uploadBtn').addEventListener('click', () => {
+            document.getElementById('videoUpload').click();
+        });
+
+        document.getElementById('videoUpload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            log(`File selected: ${file.name} (${file.type})`);
+            
+            // Clean up previous video
+            if (capture) {
+                capture.remove();
+            }
+            
+            const url = URL.createObjectURL(file);
+            
+            log('Creating p5 video element...');
+            
+            // Create p5 video directly from blob URL
+            capture = myp5.createVideo(url);
+            capture.size(800, 600);
+            capture.hide();
+            capture.volume(0);
+            capture.loop();
+            
+            // Wait for video to load
+            capture.elt.addEventListener('loadeddata', () => {
+                log(`Video loaded: ${capture.elt.videoWidth}x${capture.elt.videoHeight}`);
+                videoLoaded = true;
+                document.getElementById('playBtn').disabled = false;
+                document.getElementById('exportBtn').disabled = false;
+
+                log('✓ Video ready to play!');
+            });
+            
+            capture.elt.addEventListener('error', (err) => {
+                log(`ERROR loading video: ${err.message || 'Unknown error'}`);
+            });
+        });
+
+        // Play/Pause
+        document.getElementById('playBtn').addEventListener('click', () => {
+            if (!capture) return;
+            
+            if (isPlaying) {
+                capture.pause();
+                document.getElementById('playBtn').innerHTML = '▶️ Play';
+                log('Video paused');
+            } else {
+                capture.play();
+                document.getElementById('playBtn').innerHTML = '⏸️ Pause';
+                log('Video playing');
+            }
+            isPlaying = !isPlaying;
+        });
+
+        // Export video logic
+let mediaRecorder;
+let recordedChunks = [];
+let isRecording = false;
+
+// Create recording from p5 canvas
+document.getElementById('exportBtn').addEventListener('click', () => {
+    if (!myp5 || !myp5.canvas) {
+        log("Canvas not ready for recording");
+        return;
+    }
+
+    const exportBtn = document.getElementById('exportBtn');
+
+    if (!isRecording) {
+        const stream = myp5.canvas.captureStream(30); // 30 FPS
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+
+        recordedChunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'motion_effects_recording.webm';
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url);
+
+            log('🎞️ Recording saved as motion_effects_recording.webm');
+            exportBtn.innerHTML = '🎥 Export Video';
+            isRecording = false;
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        exportBtn.innerHTML = '⏹️ Stop Recording';
+        log('⏺️ Recording started...');
+    } else {
+        mediaRecorder.stop();
+        exportBtn.innerHTML = '🎥 Export Video';
+        log('🛑 Recording stopped.');
+    }
+});
+
+
+        // Parameter updates
+        const sliders = ['sensitivity', 'particleDensity', 'ghostTrails', 'glowIntensity', 
+                        'trailFade', 'motionBlur', 'timeStretch'];
+        
+        sliders.forEach(slider => {
+            const element = document.getElementById(slider);
+            element.addEventListener('input', () => {
+                params[slider] = parseFloat(element.value);
+                
+                // Handle time stretch video speed
+                if (slider === 'timeStretch' && capture) {
+                    capture.speed(1 / params.timeStretch);
+                    log(`Time stretch: ${params.timeStretch}x slower`);
+                }
+                
+                document.getElementById(slider + '-val').textContent = 
+                    slider.includes('Intensity') || slider.includes('Fade') || slider.includes('Blur')
+                    ? params[slider].toFixed(2) 
+                    : params[slider];
+            });
+        });
+    </script>
+</body>
+</html>
