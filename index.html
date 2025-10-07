@@ -1,594 +1,369 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>4:3 Video Frame — Pan within Mask</title>
-
-  <!-- p5.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
-
+  <meta charset="UTF-8" />
+  <title>Frame-Accurate Compound Blur Video</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
   <style>
-    :root{
-      --bg: #f6f6f6;
-      --panel: #ffffff;
-      --accent: #222;
-      --muted: #6f6f6f;
-      --control-border: #e0e0e0;
-      --frame-w: 720px; /* default frame width (4:3) */
-      --frame-h: 540px; /* default frame height (4:3) */
-    }
-
-    html,body{
-      height:100%;
-      margin:0;
-      background: var(--bg);
-      color: var(--accent);
-      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-      -webkit-font-smoothing:antialiased;
-      -moz-osx-font-smoothing:grayscale;
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f7f7f7;
+      font-family: sans-serif;
       overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
     }
 
-    /* Layout container */
-    .stage {
+    .ui {
       position: absolute;
-      inset: 0;
-      display: grid;
-      grid-template-columns: 1fr auto 300px; /* left gap | center frame | right sliders */
-      grid-template-rows: 1fr;
-      align-items: start;
-      justify-items: center;
-      gap: 20px;
-      padding: 28px;
-      box-sizing: border-box;
-    }
-
-    /* Left controls (upper-left near frame) */
-    .left-controls {
-      align-self: start;
-      justify-self: start;
+      top: 20px;
+      left: 20px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      width: 260px;
-      margin-top: 8px;
+      color: #111;
+      z-index: 10;
     }
 
-    .controls-row {
-      display:flex;
-      gap:8px;
-      align-items:center;
-    }
-
-    .btn {
-      appearance: none;
-      border: 1px solid var(--control-border);
+    .ui button, .ui input[type=file], .ui label {
+      font-size: 14px;
       background: #fff;
-      color: var(--accent);
-      padding: 8px 12px;
-      font-size: 13px;
+      border: 1px solid #aaa;
+      color: #111;
+      padding: 5px 10px;
       cursor: pointer;
-      border-radius: 4px;
-      box-sizing: border-box;
     }
 
-    .btn.toggle {
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-    }
-
-    .filename {
+    .ui .filename {
       font-size: 13px;
-      color: var(--muted);
-      max-width: 140px;
+      color: #333;
+      max-width: 200px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      border: 1px solid transparent;
-      padding: 6px 8px;
-      border-radius: 4px;
-      background: transparent;
     }
 
-    input[type=file] {
-      display: none; /* we'll style our own choose button */
-    }
-
-    /* Center frame — fixed 4:3 area */
-    .center-frame {
-      width: var(--frame-w);
-      height: var(--frame-h);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000; /* mask background */
-      box-sizing: border-box;
-      position: relative;
-      overflow: hidden; /* this is the mask/window */
-    }
-
-    /* thin border to define edge (flat) */
-    .center-frame::after {
-      content: "";
+    .sliders {
       position: absolute;
-      inset: 0;
-      border: 1px solid rgba(0,0,0,0.06);
-      pointer-events: none;
-    }
-
-    /* Right sliders area, top aligned */
-    .right-sliders {
-      width: 300px;
-      align-self: start;
-      justify-self: end;
+      top: 20px;
+      right: 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-top: 8px;
+      gap: 15px;
+      color: #111;
+      z-index: 10;
     }
 
-    .slider-card {
-      background: var(--panel);
-      border: 1px solid var(--control-border);
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      color: var(--accent);
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
     }
 
-    .slider-row {
-      display:flex;
-      align-items:center;
-      gap:10px;
-    }
-
-    label { font-size:13px; color:var(--muted); min-width:80px; }
-
-    input[type=range]{
-      -webkit-appearance:none;
-      width: 160px;
+    input[type=range] {
+      width: 180px;
+      -webkit-appearance: none;
       height: 6px;
-      background: transparent;
-    }
-    input[type=range]::-webkit-slider-runnable-track{
-      height:6px;
-      background: linear-gradient(#ddd, #ddd);
-      border-radius:3px;
-    }
-    input[type=range]::-webkit-slider-thumb{
-      -webkit-appearance:none;
-      width:12px;height:12px;border-radius:50%;
-      background:var(--accent);
-      margin-top:-3px;
+      background: #ccc;
+      border-radius: 3px;
     }
 
-    .small {
-      font-size:12px;
-      color:var(--muted);
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #111;
+      border-radius: 0;
+      cursor: pointer;
     }
 
-    /* small helper row */
-    .helper-row {
-      display:flex;
-      gap:10px;
-      align-items:center;
+    #frame {
+      width: 720px;
+      height: 540px;
+      background: #000;
+      overflow: hidden;
+      position: relative;
     }
 
-    .muted {
-      color:var(--muted);
-      font-size:12px;
-    }
-
-    /* responsive tweaks */
-    @media (max-width:1150px){
-      :root{ --frame-w: 640px; --frame-h:480px; }
-      .stage { grid-template-columns: 1fr auto 220px; }
-      .right-sliders{ width:220px; }
-    }
-    @media (max-width:900px){
-      /* stack right sliders under frame on smaller screens */
-      .stage{ grid-template-columns: 1fr; grid-template-rows: auto auto auto; gap: 16px; justify-items:center; align-items:start; }
-      .left-controls{ order:1; }
-      .center-frame{ order:2; }
-      .right-sliders{ order:3; width:90%; justify-self:center; }
+    canvas {
+      display: block;
     }
   </style>
 </head>
 <body>
-  <div class="stage">
-    <div class="left-controls">
-      <div class="controls-row">
-        <label class="small muted" for="choose">Video</label>
-        <!-- custom choose button -->
-        <button id="chooseBtn" class="btn">Choose File</button>
-        <input id="fileInput" type="file" accept="video/*">
-        <div class="filename" id="filename">No file selected</div>
-      </div>
-
-      <div class="controls-row">
-        <button id="webcamBtn" class="btn toggle">Use Webcam</button>
-        <button id="resetBtn" class="btn">Reset Pan</button>
-      </div>
-
-      <div class="helper-row">
-        <div class="muted">Tip:</div>
-        <div class="muted">Click + drag inside the frame to pan the video.</div>
-      </div>
-    </div>
-
-    <!-- center frame (p5 canvas will be positioned over/inside this) -->
-    <div id="frame" class="center-frame" aria-label="Video frame (4:3)">
-      <!-- invisible placeholder; p5 will draw into the canvas positioned over this container -->
-    </div>
-
-    <div class="right-sliders">
-      <div class="slider-card">
-        <div class="small muted">Opacity</div>
-        <div class="slider-row">
-          <label>Opacity</label>
-          <input id="opacitySlider" type="range" min="0" max="1" step="0.01" value="1">
-          <div class="muted" id="opacityVal">1.00</div>
-        </div>
-      </div>
-
-      <div class="slider-card">
-        <div class="small muted">Blur (px)</div>
-        <div class="slider-row">
-          <label>Blur</label>
-          <input id="blurSlider" type="range" min="0" max="12" step="0.5" value="0">
-          <div class="muted" id="blurVal">0</div>
-        </div>
-      </div>
-
-      <div class="slider-card">
-        <div class="small muted">Brightness</div>
-        <div class="slider-row">
-          <label>Bright</label>
-          <input id="brightSlider" type="range" min="-100" max="100" step="1" value="0">
-          <div class="muted" id="brightVal">0</div>
-        </div>
-      </div>
-
-      <div class="slider-card">
-        <div class="small muted">Invert</div>
-        <div class="slider-row">
-          <label>Invert</label>
-          <input id="invertCheckbox" type="checkbox">
-        </div>
-      </div>
-    </div>
+  <div class="ui">
+    <label>
+      Choose File
+      <input type="file" id="fileInput" accept="video/*" style="display:none;">
+    </label>
+    <button id="webcamBtn">Use Webcam</button>
+    <div class="filename" id="filename">No file selected</div>
   </div>
 
+  <div class="sliders">
+    <div class="slider-container">
+      <label>Opacity</label>
+      <input type="range" id="opacitySlider" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <div class="slider-container">
+      <label>Compound Blur Max</label>
+      <input type="range" id="maxBlurSlider" min="0" max="40" step="1" value="0">
+    </div>
+
+    <div class="slider-container">
+      <label><input type="checkbox" id="invertToggle"> Invert</label>
+    </div>
+
+    <div class="slider-container">
+      <label><input type="checkbox" id="compoundToggle">Compound Blur</label>
+    </div>
+
+    <div class="slider-container">
+      <label>Time Difference (frames)</label>
+      <input type="range" id="timeDiffSlider" min="0" max="30" step="1" value="0">
+    </div>
+    
+    <div class="slider-container">
+      <label>Posterize</label>
+      <input type="range" id="posterizeSlider" min="2" max="32" step="1" value="32">
+    </div>
+
+    <div class="slider-container">
+      <label>Playback Speed</label>
+      <input type="range" id="speedSlider" min="0.1" max="3" step="0.05" value="1">
+    </div>
+    
+    
+  </div>
+
+  <div id="frame"></div>
+
   <script>
-    /*
-      p5 sketch handles:
-      - drawing the current video (uploaded file OR webcam) into the fixed 4:3 frame
-      - maintaining video natural size, and allowing pan within mask via mouse drag
-      - applying simple shader-like effects (brightness/invert/blur done with canvas filters and simple approach)
-    */
-
-    let videoElem = null;      // reference to the underlying HTMLVideoElement
+    let video, capture;
     let usingWebcam = false;
-    let stream = null;
+    let opacitySlider, maxBlurSlider, invertToggle, compoundToggle;
+    let referenceLayer;
+    let timeDiffSlider, posterizeSlider;
+    let previousFrames = []; // buffer to store previous frames for time difference
+    let speedSlider;
+    let blurredFrame = applyCompoundBlur(effectFrame, referenceFrame);
 
-    // pan state
-    let offsetX = 0, offsetY = 0;     // how much the video is translated when drawn (pixels)
-    let dragging = false;
-    let lastMouseX = 0, lastMouseY = 0;
 
-    // frame dimensions (kept in sync with CSS vars)
-    let frameW = 720, frameH = 540;
 
-    // effect values
-    let opacityVal = 1;
-    let blurVal = 0;
-    let brightVal = 0;
-    let invertOn = false;
 
-    // p5 canvas
-    let cnv;
 
-    function setup(){
-      // determine frame dims from CSS variables
-      const root = getComputedStyle(document.documentElement);
-      frameW = parseInt(root.getPropertyValue('--frame-w')) || 720;
-      frameH = parseInt(root.getPropertyValue('--frame-h')) || 540;
+    function setup() {
+      let frame = select('#frame');
+      let cnv = createCanvas(720, 540);
+      cnv.parent(frame);
+      noLoop();
 
-      // the p5 canvas is sized to the frame and placed inside #frame element
-      const frameEl = document.getElementById('frame');
-      cnv = createCanvas(frameW, frameH);
-      cnv.parent('frame');
-      pixelDensity(1);            // keep pixel density manageable
+      opacitySlider = select('#opacitySlider');
+      maxBlurSlider = select('#maxBlurSlider');
+      invertToggle = select('#invertToggle');
+      compoundToggle = select('#compoundToggle');
+      timeDiffSlider = select('#timeDiffSlider');
+      posterizeSlider = select('#posterizeSlider');
 
-      // make sure canvas style matches container exactly
-      cnv.elt.style.display = 'block';
-      cnv.elt.style.width = frameW + 'px';
-      cnv.elt.style.height = frameH + 'px';
 
-      // hide default cursor when dragging
-      canvas.mousePressed(startDrag);
-      canvas.mouseReleased(stopDrag);
-      canvas.mouseOut(stopDrag);
 
-      // create invisible video element for drawing frames
-      videoElem = createVideo([], () => {}).elt;
-      videoElem.autoplay = true;
-      videoElem.muted = true;
-      videoElem.loop = true;
-      videoElem.playsInline = true;
+      referenceLayer = createGraphics(width, height);
 
-      // wire up UI controls
-      setupUI();
+      select('#fileInput').changed(handleFile);
+      select('#webcamBtn').mousePressed(toggleWebcam);
+
+      opacitySlider.input(redraw);
+      maxBlurSlider.input(redraw);
+      invertToggle.changed(redraw);
+      compoundToggle.changed(redraw);
+      timeDiffSlider.input(redraw);
+      posterizeSlider.input(redraw);
+    }
+
+    function draw() {
       background(0);
-      noSmooth();
-    }
 
-    function windowResized(){
-      // keep canvas matching frame dimensions from CSS if responsive breakpoints changed
-      const root = getComputedStyle(document.documentElement);
-      frameW = parseInt(root.getPropertyValue('--frame-w')) || frameW;
-      frameH = parseInt(root.getPropertyValue('--frame-h')) || frameH;
-      resizeCanvas(frameW, frameH);
-      cnv.elt.style.width = frameW + 'px';
-      cnv.elt.style.height = frameH + 'px';
-    }
+      if (!video) return;
 
-    function draw(){
-      clear();
+      video.loadPixels();
+      referenceLayer.image(video, 0, 0, width, height);
+      referenceLayer.loadPixels();
 
-      // fill frame background
+      if (compoundToggle.elt.checked) {
+        applyCompoundBlur(video, referenceLayer, maxBlurSlider.value());
+      }
+
       push();
-      noStroke();
-      fill(0);
-      rect(0,0,width,height);
+      translate(width/2, height/2);
+      imageMode(CENTER);
+      tint(255, opacitySlider.value() * 255);
+      image(video, 0, 0);
       pop();
 
-      if (videoElem && videoElem.readyState >= 2 && (videoElem.videoWidth || videoElem.videoHeight)){
-        // natural video size
-        const vW = videoElem.videoWidth;
-        const vH = videoElem.videoHeight;
-
-        // draw the video at its natural size but offset by offsetX/Y in the frame
-        // clamp pan so users can't pan beyond edges (i.e., always show valid video pixels)
-
-        // initial centering if offsets are zero and video is smaller than frame
-        // compute min/max allowed offsets (video drawn at native size)
-        const minOffsetX = Math.min(0, frameW - vW);
-        const maxOffsetX = Math.max(0, 0); // 0 is leftmost (can't drag right beyond left edge)
-        const minOffsetY = Math.min(0, frameH - vH);
-        const maxOffsetY = Math.max(0, 0);
-
-        // clamp offsets
-        offsetX = clamp(offsetX, minOffsetX, maxOffsetX);
-        offsetY = clamp(offsetY, minOffsetY, maxOffsetY);
-
-        // apply global effects (we'll use canvas filters and a drawing pass)
-        // Save current drawing to an offscreen graphics buffer so we can apply CSS filters
-        // p5 doesn't directly expose CSS filters on the canvas, but we can use drawingContext.filter
-        push();
-        // enable alpha blending for opacity
-        blendMode(BLEND);
-        drawingContext.save();
-
-        // Build CSS filter string for brightness/blur/invert
-        const brightPct = (100 + brightVal) + '%'; // brightness CSS uses percent
-        const blurPx = blurVal + 'px';
-        const invertStr = invertOn ? 'invert(100%)' : '';
-        const filterStr = `brightness(${brightPct}) blur(${blurPx}) ${invertStr}`;
-
-        // set canvas 2D context filter
-        drawingContext.filter = filterStr;
-        drawingContext.globalAlpha = opacityVal;
-
-        // draw the video element into the canvas at offset
-        // note: image(video, x, y, width, height) will draw scaled; we draw at natural size:
-        image(videoElem, offsetX, offsetY, vW, vH);
-
-        // restore
-        drawingContext.restore();
-        pop();
-      } else {
-        // placeholder text
-        push();
-        fill(80);
-        noStroke();
-        textSize(14);
-        textAlign(CENTER, CENTER);
-        text('No video loaded\nChoose a file or enable webcam', width/2, height/2);
-        pop();
-      }
-    }
-
-    // ---------- drag / pan handlers ----------
-    function startDrag(){
-      if (!videoElem) return;
-      dragging = true;
-      lastMouseX = mouseX;
-      lastMouseY = mouseY;
-      return false;
-    }
-
-    function stopDrag(){
-      dragging = false;
-    }
-
-    function mouseDragged(){
-      if (!dragging) return;
-      const dx = mouseX - lastMouseX;
-      const dy = mouseY - lastMouseY;
-      lastMouseX = mouseX;
-      lastMouseY = mouseY;
-      offsetX += dx;
-      offsetY += dy;
-      // clamp immediately so we don't drift
-      if (videoElem && videoElem.readyState >= 2){
-        const vW = videoElem.videoWidth;
-        const vH = videoElem.videoHeight;
-        const minOffsetX = Math.min(0, frameW - vW);
-        const maxOffsetX = 0;
-        const minOffsetY = Math.min(0, frameH - vH);
-        const maxOffsetY = 0;
-        offsetX = clamp(offsetX, minOffsetX, maxOffsetX);
-        offsetY = clamp(offsetY, minOffsetY, maxOffsetY);
-      }
-      return false; // prevent default
-    }
-
-    // ---------- helper ----------
-    function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-
-    // ---------- UI wiring ----------
-    function setupUI(){
-      // choose file visual button and hidden file input
-      const chooseBtn = document.getElementById('chooseBtn');
-      const fileInput = document.getElementById('fileInput');
-      const filenameDiv = document.getElementById('filename');
-      const webcamBtn = document.getElementById('webcamBtn');
-      const resetBtn = document.getElementById('resetBtn');
-
-      chooseBtn.addEventListener('click', ()=> fileInput.click());
-      fileInput.addEventListener('change', async (e) => {
-        stopWebcamIfAny();
-        const file = e.target.files[0];
-        if (!file) return;
-        filenameDiv.textContent = file.name;
-        // create object URL and load into video element
-        const url = URL.createObjectURL(file);
-        loadFileIntoVideo(url);
-      });
-
-      webcamBtn.addEventListener('click', async ()=>{
-        if (!usingWebcam){
-          // start webcam
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            const tracks = stream.getVideoTracks();
-            if (tracks && tracks.length){
-              usingWebcam = true;
-              webcamBtn.textContent = 'Stop Webcam';
-              filenameDiv.textContent = 'Webcam';
-              // attach stream to video element
-              if (videoElem) {
-                videoElem.srcObject = stream;
-                videoElem.play().catch(()=>{});
-                // when webcam starts, reset pan
-                resetPan();
-              }
-            }
-          } catch (err){
-            console.warn('Webcam error', err);
-            alert('Could not start webcam: ' + (err.message || err));
-          }
-        } else {
-          stopWebcamIfAny();
-          webcamBtn.textContent = 'Use Webcam';
-          filenameDiv.textContent = 'No file selected';
+      if (invertToggle.elt.checked) {
+        loadPixels();
+        for (let i=0; i<pixels.length; i+=4){
+          pixels[i] = 255 - pixels[i];
+          pixels[i+1] = 255 - pixels[i+1];
+          pixels[i+2] = 255 - pixels[i+2];
         }
-      });
-
-      resetBtn.addEventListener('click', ()=> resetPan());
-
-      // sliders
-      const opacitySlider = document.getElementById('opacitySlider');
-      const blurSlider = document.getElementById('blurSlider');
-      const brightSlider = document.getElementById('brightSlider');
-      const invertCheckbox = document.getElementById('invertCheckbox');
-
-      opacitySlider.addEventListener('input', (e)=>{
-        opacityVal = parseFloat(e.target.value);
-        document.getElementById('opacityVal').textContent = opacityVal.toFixed(2);
-      });
-
-      blurSlider.addEventListener('input', (e)=>{
-        blurVal = parseFloat(e.target.value);
-        document.getElementById('blurVal').textContent = blurVal.toFixed(1);
-      });
-
-      brightSlider.addEventListener('input', (e)=>{
-        brightVal = parseInt(e.target.value, 10);
-        document.getElementById('brightVal').textContent = brightVal;
-      });
-
-      invertCheckbox.addEventListener('change', (e)=>{
-        invertOn = e.target.checked;
-      });
-    }
-
-    // load a file url into video element
-    function loadFileIntoVideo(url){
-      // stop any existing webcam stream
-      stopWebcamIfAny();
-
-      // revoke previous object urls if necessary (not tracked here)
-      if (videoElem){
-        videoElem.pause();
-        videoElem.removeAttribute('src');
-        videoElem.src = url;
-        videoElem.load();
-        // auto-play once metadata is available
-        videoElem.onloadedmetadata = () => {
-          // when new video loaded, reset pan to center / top-left depending
-          // center video within frame
-          const vW = videoElem.videoWidth;
-          const vH = videoElem.videoHeight;
-          // default offsets: center if video smaller, otherwise clamp so top-left shows
-          offsetX = Math.floor((frameW - vW) / 2);
-          offsetY = Math.floor((frameH - vH) / 2);
-          // ensure clamped
-          offsetX = clamp(offsetX, Math.min(0, frameW - vW), 0);
-          offsetY = clamp(offsetY, Math.min(0, frameH - vH), 0);
-          videoElem.play().catch(()=>{});
-        };
+        updatePixels();
       }
     }
 
-    // stop webcam & release stream tracks
-    function stopWebcamIfAny(){
-      if (stream){
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
+    function handleFile(event){
+      const file = event.target.files[0];
+      if (file) {
+        select('#filename').html(file.name);
+        if (capture) { capture.remove(); capture=null; usingWebcam=false; }
+        if (video) video.remove();
+        video = createVideo(URL.createObjectURL(file), () => {
+          video.loop();
+          video.volume(0);
+          video.hide();
+          loop();
+        });
       }
-      if (usingWebcam){
+    }
+
+    function toggleWebcam(){
+      if (!usingWebcam) {
+        select('#filename').html('Webcam active');
+        if (video) video.remove();
+        capture = createCapture(VIDEO);
+        capture.size(720, 540);
+        capture.hide();
+        video = capture;
+        usingWebcam = true;
+        loop();
+      } else {
+        capture.remove();
+        capture = null;
         usingWebcam = false;
-        const webcamBtn = document.getElementById('webcamBtn');
-        if (webcamBtn) webcamBtn.textContent = 'Use Webcam';
-      }
-      // clear srcObject if there was one
-      if (videoElem){
-        try {
-          videoElem.srcObject = null;
-        } catch (e) {}
+        select('#filename').html('No file selected');
+        video = null;
+        noLoop();
       }
     }
 
-    function resetPan(){
-      if (!videoElem || !(videoElem.videoWidth && videoElem.videoHeight)){
-        offsetX = 0;
-        offsetY = 0;
-        return;
+// ---- Compound Blur Effect ----
+// Apply blur intensity based on luminance of reference layer
+
+// ---- Compound Blur Effect ----
+// Uses reference layer luminance to control blur radius per pixel
+
+function applyCompoundBlur(effectFrame, referenceFrame) {
+  const baseBlur = 20; // fixed blur strength
+  effectFrame.loadPixels();
+  referenceFrame.loadPixels();
+
+  const d = pixelDensity();
+  const w = effectFrame.width * d;
+  const h = effectFrame.height * d;
+
+  const result = createImage(effectFrame.width, effectFrame.height);
+  result.loadPixels();
+
+  // Pixel step to speed up (sample every 2 pixels)
+  const step = 1;
+
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = 4 * (y * w + x);
+
+      // Luminance of reference controls blur radius
+      const r = referenceFrame.pixels[i];
+      const g = referenceFrame.pixels[i + 1];
+      const b = referenceFrame.pixels[i + 2];
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      const blurRadius = luminance * baseBlur;
+
+      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+
+      // Separable horizontal blur approximation
+      for (let ox = -blurRadius; ox <= blurRadius; ox += step) {
+        const sx = constrain(x + ox, 0, w - 1);
+        const si = 4 * (y * w + sx);
+        sumR += effectFrame.pixels[si];
+        sumG += effectFrame.pixels[si + 1];
+        sumB += effectFrame.pixels[si + 2];
+        count++;
       }
-      const vW = videoElem.videoWidth;
-      const vH = videoElem.videoHeight;
-      offsetX = Math.floor((frameW - vW) / 2);
-      offsetY = Math.floor((frameH - vH) / 2);
-      offsetX = clamp(offsetX, Math.min(0, frameW - vW), 0);
-      offsetY = clamp(offsetY, Math.min(0, frameH - vH), 0);
+
+      result.pixels[i] = sumR / count;
+      result.pixels[i + 1] = sumG / count;
+      result.pixels[i + 2] = sumB / count;
+      result.pixels[i + 3] = 255;
+    }
+  }
+
+  result.updatePixels();
+  return result;
+}
+
+
+   
+   
+let levels = posterizeSlider.value();
+if(levels < 32){ // only apply if less than max
+  loadPixels();
+  for(let i=0; i<pixels.length; i+=4){
+    pixels[i]   = floor(pixels[i]   / 255 * levels) / levels * 255;
+    pixels[i+1] = floor(pixels[i+1] / 255 * levels) / levels * 255;
+    pixels[i+2] = floor(pixels[i+2] / 255 * levels) / levels * 255;
+  }
+  updatePixels();
+}
+
+if(timeDiffSlider.value() > 0){
+  let frameOffset = timeDiffSlider.value(); // number of frames back
+
+  // Store current frame in buffer
+  previousFrames.push(video.get()); // make a copy of current frame
+
+  if(previousFrames.length > frameOffset){
+    let pastFrame = previousFrames[previousFrames.length - 1 - frameOffset];
+
+    video.loadPixels();
+    pastFrame.loadPixels();
+
+    for(let i = 0; i < video.pixels.length; i += 4){
+      // Compute per-channel absolute difference
+      let diffR = video.pixels[i]   - pastFrame.pixels[i];
+      let diffG = video.pixels[i+1] - pastFrame.pixels[i+1];
+      let diffB = video.pixels[i+2] - pastFrame.pixels[i+2];
+
+      video.pixels[i]   = abs(diffR);
+      video.pixels[i+1] = abs(diffG);
+      video.pixels[i+2] = abs(diffB);
+      // alpha remains unchanged
     }
 
-    // cleanup on unload
-    window.addEventListener('beforeunload', ()=>{
-      stopWebcamIfAny();
-      if (videoElem){
-        try { videoElem.pause(); } catch(e){}
-      }
-    });
+    video.updatePixels();
+  }
+
+  // Limit buffer size for memory efficiency
+  if(previousFrames.length > frameOffset + 5){
+    previousFrames.shift();
+  }
+} else {
+  // If slider is zero, just apply compound blur normally
+  applyCompoundBlur(video, referenceLayer, maxBlurSlider.value());
+}
+
+
+
+speedSlider = select('#speedSlider');
+speedSlider.input(() => {
+  if(video) video.speed(speedSlider.value());
+});
+
+
   </script>
 </body>
 </html>
 
-
-    </script>
-</body>
-</html>
