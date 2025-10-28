@@ -1,366 +1,369 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Frame-Accurate Compound Blur Video</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+  <meta charset="utf-8" />
+  <title>Edge-based Flow Field — p5.js</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background: #f7f7f7;
-      font-family: sans-serif;
-      overflow: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-
-    .ui {
+    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    #ui {
       position: absolute;
-      top: 20px;
-      left: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      color: #111;
-      z-index: 10;
+      top: 10px; left: 10px;
+      background: rgba(20,20,20,0.85);
+      padding: 10px; border-radius: 8px;
+      z-index: 20;
+      max-width: 360px;
     }
-
-    .ui button, .ui input[type=file], .ui label {
-      font-size: 14px;
-      background: #fff;
-      border: 1px solid #aaa;
-      color: #111;
-      padding: 5px 10px;
-      cursor: pointer;
-    }
-
-    .ui .filename {
-      font-size: 13px;
-      color: #333;
-      max-width: 200px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .sliders {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-      color: #111;
-      z-index: 10;
-    }
-
-    .slider-container {
-      display: flex;
-      flex-direction: column;
-      font-size: 14px;
-    }
-
-    input[type=range] {
-      width: 180px;
-      -webkit-appearance: none;
-      height: 6px;
-      background: #ccc;
-      border-radius: 3px;
-    }
-
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 12px;
-      height: 12px;
-      background: #111;
-      border-radius: 0;
-      cursor: pointer;
-    }
-
-    #frame {
-      width: 720px;
-      height: 540px;
-      background: #000;
-      overflow: hidden;
-      position: relative;
-    }
-
-    canvas {
-      display: block;
-    }
+    label { display:block; margin:6px 0 2px; font-size:13px; color:#ccc; }
+    input[type="range"] { width: 100%; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .small { width: 70px; }
+    canvas { display:block; margin:0 auto; }
   </style>
 </head>
 <body>
-  <div class="ui">
-    <label>
-      Choose File
-      <input type="file" id="fileInput" accept="video/*" style="display:none;">
-    </label>
-    <button id="webcamBtn">Use Webcam</button>
-    <div class="filename" id="filename">No file selected</div>
+  <div id="ui">
+    <label>Upload Video (mp4, webm)</label>
+    <input id="fileInput" type="file" accept="video/*">
+    <div class="row" style="margin-top:8px;">
+      <label style="flex:1"><input id="showVideo" type="checkbox" checked> Show video</label>
+      <button id="playPauseBtn">Play</button>
+      <button id="restartBtn">Restart</button>
+    </div>
+
+    <label>Grid cell size (px in processed image)</label>
+    <input id="cellSize" type="range" min="4" max="32" value="8">
+
+    <label>Edge threshold (0–255)</label>
+    <input id="edgeThresh" type="range" min="0" max="255" value="40">
+
+    <label>Vector scale</label>
+    <input id="vecScale" type="range" min="0" max="12" value="4">
+
+    <div class="row" style="margin-top:8px;">
+      <div class="small">FPS <span id="fps">0</span></div>
+      <div class="small">Cols <span id="cols">0</span></div>
+      <div class="small">Rows <span id="rows">0</span></div>
+    </div>
+
+    <small style="color:#888; display:block; margin-top:8px;">
+      Approach: downsample frames → Sobel edges → per-cell edge centroid → compare to previous frame → draw overlay.
+    </small>
   </div>
-
-  <div class="sliders">
-    <div class="slider-container">
-      <label>Opacity</label>
-      <input type="range" id="opacitySlider" min="0" max="1" step="0.01" value="1">
-    </div>
-
-    <div class="slider-container">
-      <label>Compound Blur Max</label>
-      <input type="range" id="maxBlurSlider" min="0" max="40" step="1" value="0">
-    </div>
-
-    <div class="slider-container">
-      <label><input type="checkbox" id="invertToggle"> Invert</label>
-    </div>
-
-    <div class="slider-container">
-      <label><input type="checkbox" id="compoundToggle">Compound Blur</label>
-    </div>
-
-    <div class="slider-container">
-      <label>Time Difference (frames)</label>
-      <input type="range" id="timeDiffSlider" min="0" max="30" step="1" value="0">
-    </div>
-    
-    <div class="slider-container">
-      <label>Posterize</label>
-      <input type="range" id="posterizeSlider" min="2" max="32" step="1" value="32">
-    </div>
-
-    <div class="slider-container">
-      <label>Playback Speed</label>
-      <input type="range" id="speedSlider" min="0.1" max="3" step="0.05" value="1">
-    </div>
-    
-    
-  </div>
-
-  <div id="frame"></div>
 
   <script>
-    let video, capture;
-    let usingWebcam = false;
-    let opacitySlider, maxBlurSlider, invertToggle, compoundToggle;
-    let referenceLayer;
-    let timeDiffSlider, posterizeSlider;
-    let previousFrames = []; // buffer to store previous frames for time difference
-    let speedSlider;
-    let blurredFrame = applyCompoundBlur(effectFrame, referenceFrame);
+    // Edge-based flow field visualization (p5.js)
+    let video;
+    let pg;                // downsampled drawing surface
+    let prevCentroids = []; // array of {x,y,sum} for previous frame cells
+    let cols = 0, rows = 0;
+    let cellSize = 8;      // in processed pixels
+    let edgeThresh = 40;
+    let vecScale = 4;
+    let showVideo = true;
+    let playing = false;
 
+    // processed image size (in pixels) - fixed width for processing to keep performance consistent
+    let procW = 160; // will adapt to video aspect ratio
+    let procH = 90;
 
-
-
+    // UI elements
+    let fileInput, playPauseBtn, restartBtn;
 
     function setup() {
-      let frame = select('#frame');
-      let cnv = createCanvas(720, 540);
-      cnv.parent(frame);
-      noLoop();
+      createCanvas(windowWidth, windowHeight);
+      pixelDensity(1);
 
-      opacitySlider = select('#opacitySlider');
-      maxBlurSlider = select('#maxBlurSlider');
-      invertToggle = select('#invertToggle');
-      compoundToggle = select('#compoundToggle');
-      timeDiffSlider = select('#timeDiffSlider');
-      posterizeSlider = select('#posterizeSlider');
+      // UI hookup
+      fileInput = select('#fileInput');
+      fileInput.changed(handleFile);
 
+      select('#cellSize').input(e => {
+        cellSize = Number(e.target.value);
+        recomputeGrid();
+      });
+      select('#edgeThresh').input(e => { edgeThresh = Number(e.target.value); });
+      select('#vecScale').input(e => { vecScale = Number(e.target.value); });
+      select('#showVideo').changed(() => { showVideo = select('#showVideo').checked(); });
 
+      playPauseBtn = select('#playPauseBtn');
+      playPauseBtn.mousePressed(togglePlay);
 
-      referenceLayer = createGraphics(width, height);
+      restartBtn = select('#restartBtn');
+      restartBtn.mousePressed(() => { if (video) { video.time(0); } });
 
-      select('#fileInput').changed(handleFile);
-      select('#webcamBtn').mousePressed(toggleWebcam);
+      // FPS counter update
+      frameRate(60);
+      setInterval(() => {
+        select('#fps').html(nf(frameRate(), 2, 1));
+      }, 500);
 
-      opacitySlider.input(redraw);
-      maxBlurSlider.input(redraw);
-      invertToggle.changed(redraw);
-      compoundToggle.changed(redraw);
-      timeDiffSlider.input(redraw);
-      posterizeSlider.input(redraw);
+      // Create a tiny pg initially
+      pg = createGraphics(procW, procH);
+      pg.pixelDensity(1);
+    }
+
+    function handleFile() {
+      const f = fileInput.elt.files[0];
+      if (!f) return;
+      if (video) {
+        video.remove(); // remove previous
+      }
+      const url = URL.createObjectURL(f);
+      video = createVideo(url, () => {
+        // once metadata loaded, setup processing sizes
+        video.hide();
+        video.volume(0);
+        video.loop();
+        playing = true;
+        playPauseBtn.html('Pause');
+        setupProcSize();
+      });
+      video.elt.crossOrigin = "anonymous";
+    }
+
+    function setupProcSize() {
+      // adapt processed width to keep similar computation for videos of different sizes
+      // keep procW fixed but adapt procH to aspect ratio
+      const vw = video.width || video.elt.videoWidth;
+      const vh = video.height || video.elt.videoHeight;
+      if (!vw || !vh) return;
+
+      // choose procW ~ 160 (or less if video very small)
+      procW = Math.max(80, Math.min(320, Math.floor(vw * 0.25)));
+      procH = Math.max(48, Math.floor(procW * vh / vw));
+      pg = createGraphics(procW, procH);
+      pg.pixelDensity(1);
+      recomputeGrid();
+    }
+
+    function recomputeGrid() {
+      cols = Math.max(1, Math.floor(procW / cellSize));
+      rows = Math.max(1, Math.floor(procH / cellSize));
+      // initialize prev centroids matrix
+      prevCentroids = new Array(cols * rows).fill(null).map(() => ({x:0,y:0,sum:0}));
+      select('#cols').html(cols);
+      select('#rows').html(rows);
+    }
+
+    function togglePlay() {
+      if (!video) return;
+      if (playing) {
+        video.pause();
+        playing = false;
+        playPauseBtn.html('Play');
+      } else {
+        video.loop();
+        playing = true;
+        playPauseBtn.html('Pause');
+      }
+    }
+
+    // --- Sobel edge filter on pg --- //
+    function sobelEdges(gfx) {
+      // returns Float32Array of intensity (0..255) size = procW * procH
+      gfx.loadPixels();
+      const w = gfx.width, h = gfx.height;
+      const intens = new Float32Array(w * h);
+
+      // compute grayscale array first
+      const gray = new Float32Array(w * h);
+      const d = gfx.pixels;
+      for (let y=0; y<h; y++) {
+        for (let x=0; x<w; x++) {
+          const i = (y*w + x) * 4;
+          // rgb to grayscale (luminosity)
+          const g = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+          gray[y*w + x] = g;
+        }
+      }
+
+      // sobel kernels
+      for (let y=1; y<h-1; y++) {
+        for (let x=1; x<w-1; x++) {
+          const idx = y*w + x;
+          // neighbors
+          const gx = 
+            -1 * gray[(y-1)*w + (x-1)] + 1 * gray[(y-1)*w + (x+1)] +
+            -2 * gray[(y)*w + (x-1)]   + 2 * gray[(y)*w + (x+1)] +
+            -1 * gray[(y+1)*w + (x-1)] + 1 * gray[(y+1)*w + (x+1)];
+          const gy =
+            -1 * gray[(y-1)*w + (x-1)] + -2 * gray[(y-1)*w + x] + -1 * gray[(y-1)*w + (x+1)] +
+             1 * gray[(y+1)*w + (x-1)] +  2 * gray[(y+1)*w + x] +  1 * gray[(y+1)*w + (x+1)];
+
+          const mag = Math.hypot(gx, gy);
+          intens[idx] = mag;
+        }
+      }
+
+      // edges on border = 0
+      return intens;
+    }
+
+    function computeCellCentroids(edgeArr, w, h) {
+      // returns array of length cols*rows with {x,y,sum} in processed-space coordinates (0..w, 0..h)
+      const out = new Array(cols * rows);
+      // initialize
+      for (let i=0;i<out.length;i++) out[i] = {x:0, y:0, sum:0};
+
+      const cellW = Math.floor(w / cols);
+      const cellH = Math.floor(h / rows);
+
+      for (let cy=0; cy<rows; cy++) {
+        for (let cx=0; cx<cols; cx++) {
+          const startX = cx * cellW;
+          const startY = cy * cellH;
+          let sx = 0, sy = 0, s = 0;
+          for (let y = startY; y < startY + cellH && y < h; y++) {
+            for (let x = startX; x < startX + cellW && x < w; x++) {
+              const val = edgeArr[y*w + x];
+              if (val >= edgeThresh) { // only consider strong edges
+                s += val;
+                sx += val * x;
+                sy += val * y;
+              }
+            }
+          }
+          const idx = cy*cols + cx;
+          if (s > 0) {
+            out[idx] = { x: sx / s, y: sy / s, sum: s };
+          } else {
+            // fallback: treat empty as center of cell with zero sum
+            out[idx] = { x: startX + cellW*0.5, y: startY + cellH*0.5, sum: 0 };
+          }
+        }
+      }
+      return out;
     }
 
     function draw() {
-      background(0);
+      background(16);
 
-      if (!video) return;
-
-      video.loadPixels();
-      referenceLayer.image(video, 0, 0, width, height);
-      referenceLayer.loadPixels();
-
-      if (compoundToggle.elt.checked) {
-        applyCompoundBlur(video, referenceLayer, maxBlurSlider.value());
+      if (!video) {
+        // instructions
+        push();
+        fill(200);
+        noStroke();
+        textSize(16);
+        textAlign(CENTER, CENTER);
+        text("Upload a video to analyze motion (edge centroids → flow field overlay)", width/2, height/2);
+        pop();
+        return;
       }
 
+      // draw video scaled to canvas while preserving aspect ratio
+      const vw = video.elt.videoWidth || video.width || 640;
+      const vh = video.elt.videoHeight || video.height || 360;
+      const canvasAspect = width/height;
+      const vidAspect = vw/vh;
+      let drawW, drawH, drawX, drawY;
+      const margin = 8;
+      // fit to canvas while leaving UI visible on left
+      const uiWidth = min(380, width * 0.33);
+      const availW = width - uiWidth - margin*2;
+      if (vidAspect > availW/height) {
+        drawW = availW;
+        drawH = drawW / vidAspect;
+      } else {
+        drawH = height - margin*2;
+        drawW = drawH * vidAspect;
+      }
+      drawX = uiWidth + margin + (availW - drawW)/2;
+      drawY = (height - drawH)/2;
+
+      // 1) draw current video frame into downsampled pg for processing
+      pg.push();
+      pg.clear();
+      // draw the video to pg sized procW x procH
+      pg.image(video, 0, 0, pg.width, pg.height);
+      pg.pop();
+
+      // 2) compute edges
+      const edges = sobelEdges(pg);
+
+      // 3) compute centroids per cell
+      const centroids = computeCellCentroids(edges, pg.width, pg.height);
+
+      // 4) draw video (optional) and overlay scaled vectors
+      if (showVideo) {
+        // show video at drawX, drawY
+        image(video, drawX, drawY, drawW, drawH);
+      } else {
+        // dark background region where video would be
+        noStroke();
+        fill(10);
+        rect(drawX, drawY, drawW, drawH);
+      }
+
+      // overlay: scale factor from processed coords to display coords
+      const sx = drawW / pg.width;
+      const sy = drawH / pg.height;
+
+      // draw vectors
       push();
-      translate(width/2, height/2);
-      imageMode(CENTER);
-      tint(255, opacitySlider.value() * 255);
-      image(video, 0, 0);
+      translate(0,0);
+      strokeWeight(1.6);
+      // draw faint cell grid debug - optional
+      // stroke(30,60); strokeWeight(1); noFill();
+      // rect(drawX, drawY, drawW, drawH);
+
+      for (let cy=0; cy<rows; cy++) {
+        for (let cx=0; cx<cols; cx++) {
+          const idx = cy*cols + cx;
+          const c = centroids[idx];
+          const p = prevCentroids[idx] || {x:c.x, y:c.y, sum:0};
+
+          // vector in processed coords (current - previous)
+          const vx = (c.x - p.x);
+          const vy = (c.y - p.y);
+
+          // small motion magnitude
+          const mag = Math.hypot(vx, vy);
+
+          // map to display coordinates
+          const px = drawX + c.x * sx;
+          const py = drawY + c.y * sy;
+          const dx = vx * sx * vecScale;
+          const dy = vy * sy * vecScale;
+
+          // make color / alpha depend on magnitude and edge strength
+          const alpha = constrain(map(centroids[idx].sum, 0, 2000, 40, 255), 30, 255);
+          const hue = map(mag, 0, 6, 200, 20); // blueish->orangeish
+          // draw arrow/line
+          stroke(255, alpha);
+          push();
+          translate(px, py);
+          // line representing vector
+          strokeWeight(1.7);
+          line(0, 0, dx, dy);
+          // small tip
+          const ang = Math.atan2(dy, dx);
+          const tipSize = 3 + map(mag, 0, 6, 0, 6);
+          translate(dx, dy);
+          rotate(ang);
+          // arrowhead
+          line(0, 0, -tipSize, -tipSize*0.6);
+          line(0, 0, -tipSize, tipSize*0.6);
+          pop();
+        }
+      }
       pop();
 
-      if (invertToggle.elt.checked) {
-        loadPixels();
-        for (let i=0; i<pixels.length; i+=4){
-          pixels[i] = 255 - pixels[i];
-          pixels[i+1] = 255 - pixels[i+1];
-          pixels[i+2] = 255 - pixels[i+2];
-        }
-        updatePixels();
+      // 5) store centroids for next frame (clone)
+      for (let i=0;i<centroids.length;i++) {
+        // copy (not reference)
+        prevCentroids[i] = { x: centroids[i].x, y: centroids[i].y, sum: centroids[i].sum };
       }
     }
 
-    function handleFile(event){
-      const file = event.target.files[0];
-      if (file) {
-        select('#filename').html(file.name);
-        if (capture) { capture.remove(); capture=null; usingWebcam=false; }
-        if (video) video.remove();
-        video = createVideo(URL.createObjectURL(file), () => {
-          video.loop();
-          video.volume(0);
-          video.hide();
-          loop();
-        });
-      }
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
     }
 
-    function toggleWebcam(){
-      if (!usingWebcam) {
-        select('#filename').html('Webcam active');
-        if (video) video.remove();
-        capture = createCapture(VIDEO);
-        capture.size(720, 540);
-        capture.hide();
-        video = capture;
-        usingWebcam = true;
-        loop();
-      } else {
-        capture.remove();
-        capture = null;
-        usingWebcam = false;
-        select('#filename').html('No file selected');
-        video = null;
-        noLoop();
-      }
-    }
+  </script>
+</body>
+</html>
 
-// ---- Compound Blur Effect ----
-// Apply blur intensity based on luminance of reference layer
-
-// ---- Compound Blur Effect ----
-// Uses reference layer luminance to control blur radius per pixel
-
-function applyCompoundBlur(effectFrame, referenceFrame) {
-  const baseBlur = 20; // fixed blur strength
-  effectFrame.loadPixels();
-  referenceFrame.loadPixels();
-
-  const d = pixelDensity();
-  const w = effectFrame.width * d;
-  const h = effectFrame.height * d;
-
-  const result = createImage(effectFrame.width, effectFrame.height);
-  result.loadPixels();
-
-  // Pixel step to speed up (sample every 2 pixels)
-  const step = 1;
-
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = 4 * (y * w + x);
-
-      // Luminance of reference controls blur radius
-      const r = referenceFrame.pixels[i];
-      const g = referenceFrame.pixels[i + 1];
-      const b = referenceFrame.pixels[i + 2];
-      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      const blurRadius = luminance * baseBlur;
-
-      let sumR = 0, sumG = 0, sumB = 0, count = 0;
-
-      // Separable horizontal blur approximation
-      for (let ox = -blurRadius; ox <= blurRadius; ox += step) {
-        const sx = constrain(x + ox, 0, w - 1);
-        const si = 4 * (y * w + sx);
-        sumR += effectFrame.pixels[si];
-        sumG += effectFrame.pixels[si + 1];
-        sumB += effectFrame.pixels[si + 2];
-        count++;
-      }
-
-      result.pixels[i] = sumR / count;
-      result.pixels[i + 1] = sumG / count;
-      result.pixels[i + 2] = sumB / count;
-      result.pixels[i + 3] = 255;
-    }
-  }
-
-  result.updatePixels();
-  return result;
-}
-
-
-   
-   
-let levels = posterizeSlider.value();
-if(levels < 32){ // only apply if less than max
-  loadPixels();
-  for(let i=0; i<pixels.length; i+=4){
-    pixels[i]   = floor(pixels[i]   / 255 * levels) / levels * 255;
-    pixels[i+1] = floor(pixels[i+1] / 255 * levels) / levels * 255;
-    pixels[i+2] = floor(pixels[i+2] / 255 * levels) / levels * 255;
-  }
-  updatePixels();
-}
-
-if(timeDiffSlider.value() > 0){
-  let frameOffset = timeDiffSlider.value(); // number of frames back
-
-  // Store current frame in buffer
-  previousFrames.push(video.get()); // make a copy of current frame
-
-  if(previousFrames.length > frameOffset){
-    let pastFrame = previousFrames[previousFrames.length - 1 - frameOffset];
-
-    video.loadPixels();
-    pastFrame.loadPixels();
-
-    for(let i = 0; i < video.pixels.length; i += 4){
-      // Compute per-channel absolute difference
-      let diffR = video.pixels[i]   - pastFrame.pixels[i];
-      let diffG = video.pixels[i+1] - pastFrame.pixels[i+1];
-      let diffB = video.pixels[i+2] - pastFrame.pixels[i+2];
-
-      video.pixels[i]   = abs(diffR);
-      video.pixels[i+1] = abs(diffG);
-      video.pixels[i+2] = abs(diffB);
-      // alpha remains unchanged
-    }
-
-    video.updatePixels();
-  }
-
-  // Limit buffer size for memory efficiency
-  if(previousFrames.length > frameOffset + 5){
-    previousFrames.shift();
-  }
-} else {
-  // If slider is zero, just apply compound blur normally
-  applyCompoundBlur(video, referenceLayer, maxBlurSlider.value());
-}
-
-
-
-speedSlider = select('#speedSlider');
-speedSlider.input(() => {
-  if(video) video.speed(speedSlider.value());
-});
 
 
   </script>
