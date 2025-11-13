@@ -1,372 +1,201 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Edge-based Flow Field — p5.js</title>
+  <meta charset="UTF-8">
+  <title>Edge Line Displacement — p5.js</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
   <style>
-    body { margin: 0; background: #111; color: #eee; font-family: sans-serif; }
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+    }
     #ui {
       position: absolute;
       top: 10px; left: 10px;
       background: rgba(20,20,20,0.85);
-      padding: 10px; border-radius: 8px;
+      padding: 10px;
+      border-radius: 8px;
       z-index: 20;
-      max-width: 360px;
     }
-    label { display:block; margin:6px 0 2px; font-size:13px; color:#ccc; }
-    input[type="range"] { width: 100%; }
-    .row { display:flex; gap:8px; align-items:center; }
-    .small { width: 70px; }
-    canvas { display:block; margin:0 auto; }
+    input[type="range"], select { width: 200px; margin-bottom: 6px; }
   </style>
 </head>
 <body>
   <div id="ui">
-    <label>Upload Video (mp4, webm)</label>
-    <input id="fileInput" type="file" accept="video/*">
-    <div class="row" style="margin-top:8px;">
-      <label style="flex:1"><input id="showVideo" type="checkbox" checked> Show video</label>
-      <button id="playPauseBtn">Play</button>
-      <button id="restartBtn">Restart</button>
-    </div>
+    <label>Upload Video</label><br>
+    <input id="fileInput" type="file" accept="video/*"><br><br>
 
-    <label>Grid cell size (px in processed image)</label>
-    <input id="cellSize" type="range" min="4" max="32" value="8">
+    <label>Edge Threshold</label><br>
+    <input id="edgeThresh" type="range" min="10" max="255" value="50"><br>
 
-    <label>Edge threshold (0–255)</label>
-    <input id="edgeThresh" type="range" min="0" max="255" value="40">
+    <label>Search Radius</label><br>
+    <input id="searchRadius" type="range" min="1" max="8" value="3"><br>
 
-    <label>Vector scale</label>
-    <input id="vecScale" type="range" min="0" max="12" value="4">
+    <label>Vector Scale</label><br>
+    <input id="vecScale" type="range" min="1" max="12" value="5"><br>
 
-    <div class="row" style="margin-top:8px;">
-      <div class="small">FPS <span id="fps">0</span></div>
-      <div class="small">Cols <span id="cols">0</span></div>
-      <div class="small">Rows <span id="rows">0</span></div>
-    </div>
+    <label>Fade Amount</label><br>
+    <input id="fadeAmount" type="range" min="0" max="255" value="50"><br>
 
-    <small style="color:#888; display:block; margin-top:8px;">
-      Approach: downsample frames → Sobel edges → per-cell edge centroid → compare to previous frame → draw overlay.
-    </small>
+    <label>Red Quadrant</label><br>
+    <select id="redQuadrant">
+      <option value="0">0–90°</option>
+      <option value="1">91–180°</option>
+      <option value="2">181–270°</option>
+      <option value="3">271–360°</option>
+    </select><br>
+
+    <label>Display Mode</label><br>
+    <select id="displayMode">
+      <option value="lines">Lines</option>
+      <option value="points">Points</option>
+    </select><br>
+
+    <label><input id="showVideo" type="checkbox" checked> Show Video</label>
   </div>
 
   <script>
-    // Edge-based flow field visualization (p5.js)
     let video;
-    let pg;                // downsampled drawing surface
-    let prevCentroids = []; // array of {x,y,sum} for previous frame cells
-    let cols = 0, rows = 0;
-    let cellSize = 8;      // in processed pixels
-    let edgeThresh = 40;
-    let vecScale = 4;
+    let pg, prevEdges;
+    let edgeThresh = 50;
+    let searchRadius = 3;
+    let vecScale = 5;
+    let fadeAmount = 50;
+    let redQuadrant = 0;
+    let displayMode = "lines";
     let showVideo = true;
-    let playing = false;
-
-    // processed image size (in pixels) - fixed width for processing to keep performance consistent
-    let procW = 160; // will adapt to video aspect ratio
-    let procH = 90;
-
-    // UI elements
-    let fileInput, playPauseBtn, restartBtn;
+    let w = 160, h = 90; // downsample size
 
     function setup() {
       createCanvas(windowWidth, windowHeight);
       pixelDensity(1);
-
-      // UI hookup
-      fileInput = select('#fileInput');
-      fileInput.changed(handleFile);
-
-      select('#cellSize').input(e => {
-        cellSize = Number(e.target.value);
-        recomputeGrid();
-      });
-      select('#edgeThresh').input(e => { edgeThresh = Number(e.target.value); });
-      select('#vecScale').input(e => { vecScale = Number(e.target.value); });
-      select('#showVideo').changed(() => { showVideo = select('#showVideo').checked(); });
-
-      playPauseBtn = select('#playPauseBtn');
-      playPauseBtn.mousePressed(togglePlay);
-
-      restartBtn = select('#restartBtn');
-      restartBtn.mousePressed(() => { if (video) { video.time(0); } });
-
-      // FPS counter update
-      frameRate(60);
-      setInterval(() => {
-        select('#fps').html(nf(frameRate(), 2, 1));
-      }, 500);
-
-      // Create a tiny pg initially
-      pg = createGraphics(procW, procH);
+      pg = createGraphics(w, h);
       pg.pixelDensity(1);
+
+      select('#fileInput').changed(handleFile);
+      select('#edgeThresh').input(e => edgeThresh = +e.target.value);
+      select('#searchRadius').input(e => searchRadius = +e.target.value);
+      select('#vecScale').input(e => vecScale = +e.target.value);
+      select('#fadeAmount').input(e => fadeAmount = +e.target.value);
+      select('#redQuadrant').changed(e => redQuadrant = +e.target.value);
+      select('#displayMode').changed(e => displayMode = e.target.value);
+      select('#showVideo').changed(() => showVideo = select('#showVideo').checked());
     }
 
     function handleFile() {
-      const f = fileInput.elt.files[0];
+      const f = select('#fileInput').elt.files[0];
       if (!f) return;
-      if (video) {
-        video.remove(); // remove previous
-      }
+      if (video) video.remove();
       const url = URL.createObjectURL(f);
       video = createVideo(url, () => {
-        // once metadata loaded, setup processing sizes
         video.hide();
         video.volume(0);
         video.loop();
-        playing = true;
-        playPauseBtn.html('Pause');
-        setupProcSize();
       });
-      video.elt.crossOrigin = "anonymous";
     }
 
-    function setupProcSize() {
-      // adapt processed width to keep similar computation for videos of different sizes
-      // keep procW fixed but adapt procH to aspect ratio
-      const vw = video.width || video.elt.videoWidth;
-      const vh = video.height || video.elt.videoHeight;
-      if (!vw || !vh) return;
-
-      // choose procW ~ 160 (or less if video very small)
-      procW = Math.max(80, Math.min(320, Math.floor(vw * 0.25)));
-      procH = Math.max(48, Math.floor(procW * vh / vw));
-      pg = createGraphics(procW, procH);
-      pg.pixelDensity(1);
-      recomputeGrid();
-    }
-
-    function recomputeGrid() {
-      cols = Math.max(1, Math.floor(procW / cellSize));
-      rows = Math.max(1, Math.floor(procH / cellSize));
-      // initialize prev centroids matrix
-      prevCentroids = new Array(cols * rows).fill(null).map(() => ({x:0,y:0,sum:0}));
-      select('#cols').html(cols);
-      select('#rows').html(rows);
-    }
-
-    function togglePlay() {
-      if (!video) return;
-      if (playing) {
-        video.pause();
-        playing = false;
-        playPauseBtn.html('Play');
-      } else {
-        video.loop();
-        playing = true;
-        playPauseBtn.html('Pause');
-      }
-    }
-
-    // --- Sobel edge filter on pg --- //
-    function sobelEdges(gfx) {
-      // returns Float32Array of intensity (0..255) size = procW * procH
-      gfx.loadPixels();
-      const w = gfx.width, h = gfx.height;
-      const intens = new Float32Array(w * h);
-
-      // compute grayscale array first
+    function sobelEdges(img) {
+      img.loadPixels();
+      const w = img.width, h = img.height;
+      const edges = new Float32Array(w * h);
       const gray = new Float32Array(w * h);
-      const d = gfx.pixels;
-      for (let y=0; y<h; y++) {
-        for (let x=0; x<w; x++) {
-          const i = (y*w + x) * 4;
-          // rgb to grayscale (luminosity)
-          const g = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-          gray[y*w + x] = g;
+      const d = img.pixels;
+      for (let i = 0; i < w * h; i++) {
+        const j = i * 4;
+        gray[i] = 0.2126*d[j] + 0.7152*d[j+1] + 0.0722*d[j+2];
+      }
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const gx = -gray[(y-1)*w + (x-1)] + gray[(y-1)*w + (x+1)]
+                   - 2*gray[y*w + (x-1)] + 2*gray[y*w + (x+1)]
+                   - gray[(y+1)*w + (x-1)] + gray[(y+1)*w + (x+1)];
+          const gy = -gray[(y-1)*w + (x-1)] - 2*gray[(y-1)*w + x] - gray[(y-1)*w + (x+1)]
+                   + gray[(y+1)*w + (x-1)] + 2*gray[(y+1)*w + x] + gray[(y+1)*w + (x+1)];
+          edges[y*w + x] = Math.hypot(gx, gy);
         }
       }
-
-      // sobel kernels
-      for (let y=1; y<h-1; y++) {
-        for (let x=1; x<w-1; x++) {
-          const idx = y*w + x;
-          // neighbors
-          const gx = 
-            -1 * gray[(y-1)*w + (x-1)] + 1 * gray[(y-1)*w + (x+1)] +
-            -2 * gray[(y)*w + (x-1)]   + 2 * gray[(y)*w + (x+1)] +
-            -1 * gray[(y+1)*w + (x-1)] + 1 * gray[(y+1)*w + (x+1)];
-          const gy =
-            -1 * gray[(y-1)*w + (x-1)] + -2 * gray[(y-1)*w + x] + -1 * gray[(y-1)*w + (x+1)] +
-             1 * gray[(y+1)*w + (x-1)] +  2 * gray[(y+1)*w + x] +  1 * gray[(y+1)*w + (x+1)];
-
-          const mag = Math.hypot(gx, gy);
-          intens[idx] = mag;
-        }
-      }
-
-      // edges on border = 0
-      return intens;
-    }
-
-    function computeCellCentroids(edgeArr, w, h) {
-      // returns array of length cols*rows with {x,y,sum} in processed-space coordinates (0..w, 0..h)
-      const out = new Array(cols * rows);
-      // initialize
-      for (let i=0;i<out.length;i++) out[i] = {x:0, y:0, sum:0};
-
-      const cellW = Math.floor(w / cols);
-      const cellH = Math.floor(h / rows);
-
-      for (let cy=0; cy<rows; cy++) {
-        for (let cx=0; cx<cols; cx++) {
-          const startX = cx * cellW;
-          const startY = cy * cellH;
-          let sx = 0, sy = 0, s = 0;
-          for (let y = startY; y < startY + cellH && y < h; y++) {
-            for (let x = startX; x < startX + cellW && x < w; x++) {
-              const val = edgeArr[y*w + x];
-              if (val >= edgeThresh) { // only consider strong edges
-                s += val;
-                sx += val * x;
-                sy += val * y;
-              }
-            }
-          }
-          const idx = cy*cols + cx;
-          if (s > 0) {
-            out[idx] = { x: sx / s, y: sy / s, sum: s };
-          } else {
-            // fallback: treat empty as center of cell with zero sum
-            out[idx] = { x: startX + cellW*0.5, y: startY + cellH*0.5, sum: 0 };
-          }
-        }
-      }
-      return out;
+      return edges;
     }
 
     function draw() {
-      background(16);
+      background(0, fadeAmount);
 
       if (!video) {
-        // instructions
-        push();
         fill(200);
-        noStroke();
-        textSize(16);
         textAlign(CENTER, CENTER);
-        text("Upload a video to analyze motion (edge centroids → flow field overlay)", width/2, height/2);
-        pop();
+        text("Upload a video to detect edge displacement", width/2, height/2);
         return;
       }
 
-      // draw video scaled to canvas while preserving aspect ratio
-      const vw = video.elt.videoWidth || video.width || 640;
-      const vh = video.elt.videoHeight || video.height || 360;
-      const canvasAspect = width/height;
-      const vidAspect = vw/vh;
-      let drawW, drawH, drawX, drawY;
-      const margin = 8;
-      // fit to canvas while leaving UI visible on left
-      const uiWidth = min(380, width * 0.33);
-      const availW = width - uiWidth - margin*2;
-      if (vidAspect > availW/height) {
-        drawW = availW;
-        drawH = drawW / vidAspect;
-      } else {
-        drawH = height - margin*2;
-        drawW = drawH * vidAspect;
-      }
-      drawX = uiWidth + margin + (availW - drawW)/2;
-      drawY = (height - drawH)/2;
-
-      // 1) draw current video frame into downsampled pg for processing
-      pg.push();
-      pg.clear();
-      // draw the video to pg sized procW x procH
-      pg.image(video, 0, 0, pg.width, pg.height);
-      pg.pop();
-
-      // 2) compute edges
+      pg.image(video, 0, 0, w, h);
       const edges = sobelEdges(pg);
 
-      // 3) compute centroids per cell
-      const centroids = computeCellCentroids(edges, pg.width, pg.height);
-
-      // 4) draw video (optional) and overlay scaled vectors
-      if (showVideo) {
-        // show video at drawX, drawY
-        image(video, drawX, drawY, drawW, drawH);
-      } else {
-        // dark background region where video would be
-        noStroke();
-        fill(10);
-        rect(drawX, drawY, drawW, drawH);
+      const vw = video.elt.videoWidth || video.width || 640;
+      const vh = video.elt.videoHeight || video.height || 360;
+      const aspect = vw/vh;
+      let drawW = width, drawH = width / aspect;
+      if (drawH > height) {
+        drawH = height;
+        drawW = height * aspect;
       }
+      const drawX = (width - drawW)/2;
+      const drawY = (height - drawH)/2;
+      const sx = drawW / w, sy = drawH / h;
 
-      // overlay: scale factor from processed coords to display coords
-      const sx = drawW / pg.width;
-      const sy = drawH / pg.height;
+      if (showVideo) image(video, drawX, drawY, drawW, drawH);
 
-      // draw vectors
-      push();
-      translate(0,0);
-      strokeWeight(1.6);
-      // draw faint cell grid debug - optional
-      // stroke(30,60); strokeWeight(1); noFill();
-      // rect(drawX, drawY, drawW, drawH);
+      if (prevEdges) {
+        strokeWeight(2.5);
+        for (let y = searchRadius; y < h - searchRadius; y += 2) {
+          for (let x = searchRadius; x < w - searchRadius; x += 2) {
+            const idx = y*w + x;
+            if (edges[idx] > edgeThresh) {
+              let bestDx = 0, bestDy = 0, bestDiff = Infinity;
+              for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+                for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+                  const j = (y+dy)*w + (x+dx);
+                  if (j < 0 || j >= w*h) continue;
+                  const diff = Math.abs(edges[idx] - prevEdges[j]);
+                  if (diff < bestDiff && prevEdges[j] > edgeThresh) {
+                    bestDiff = diff;
+                    bestDx = dx;
+                    bestDy = dy;
+                  }
+                }
+              }
 
-      for (let cy=0; cy<rows; cy++) {
-        for (let cx=0; cx<cols; cx++) {
-          const idx = cy*cols + cx;
-          const c = centroids[idx];
-          const p = prevCentroids[idx] || {x:c.x, y:c.y, sum:0};
+              if (bestDx !== 0 || bestDy !== 0) {
+                const px = drawX + x * sx;
+                const py = drawY + y * sy;
+                const dx = bestDx * sx * vecScale;
+                const dy = bestDy * sy * vecScale;
 
-          // vector in processed coords (current - previous)
-          const vx = (c.x - p.x);
-          const vy = (c.y - p.y);
+                const angle = (degrees(atan2(-dy, dx)) + 360) % 360;
+                const quad = floor(angle / 90);
+                if (quad === redQuadrant) stroke(255, 60, 60, 220);
+                else stroke(200, 200, 200, 150);
 
-          // small motion magnitude
-          const mag = Math.hypot(vx, vy);
-
-          // map to display coordinates
-          const px = drawX + c.x * sx;
-          const py = drawY + c.y * sy;
-          const dx = vx * sx * vecScale;
-          const dy = vy * sy * vecScale;
-
-          // make color / alpha depend on magnitude and edge strength
-          const alpha = constrain(map(centroids[idx].sum, 0, 2000, 40, 255), 30, 255);
-          const hue = map(mag, 0, 6, 200, 20); // blueish->orangeish
-          // draw arrow/line
-          stroke(255, alpha);
-          push();
-          translate(px, py);
-          // line representing vector
-          strokeWeight(1.7);
-          line(0, 0, dx, dy);
-          // small tip
-          const ang = Math.atan2(dy, dx);
-          const tipSize = 3 + map(mag, 0, 6, 0, 6);
-          translate(dx, dy);
-          rotate(ang);
-          // arrowhead
-          line(0, 0, -tipSize, -tipSize*0.6);
-          line(0, 0, -tipSize, tipSize*0.6);
-          pop();
+                if (displayMode === "lines") {
+                  line(px, py, px - dx, py - dy);
+                } else {
+                  point(px - dx, py - dy); // outer tip of line
+                }
+              }
+            }
+          }
         }
       }
-      pop();
 
-      // 5) store centroids for next frame (clone)
-      for (let i=0;i<centroids.length;i++) {
-        // copy (not reference)
-        prevCentroids[i] = { x: centroids[i].x, y: centroids[i].y, sum: centroids[i].sum };
-      }
+      prevEdges = edges;
     }
 
     function windowResized() {
       resizeCanvas(windowWidth, windowHeight);
     }
-
   </script>
 </body>
 </html>
 
-
-
-  </script>
-</body>
-</html>
 
