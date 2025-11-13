@@ -10,19 +10,42 @@
       background: #111;
       color: #eee;
       font-family: sans-serif;
+      overflow: hidden;
     }
     #ui {
-      position: absolute;
-      top: 10px; left: 10px;
-      background: rgba(20,20,20,0.85);
-      padding: 10px;
-      border-radius: 8px;
+      position: fixed;
+      top: 10px; 
+      right: 10px;
+      background: rgba(20,20,20,0.7);
+      padding: 10px 12px;
+      border-radius: 10px;
       z-index: 20;
+      max-height: 90vh;
+      overflow-y: auto;
+      transition: opacity 0.3s ease;
     }
+    #ui:hover { opacity: 1; }
+    #ui.hidden { opacity: 0; pointer-events: none; }
     input[type="range"], select { width: 200px; margin-bottom: 6px; }
+    #toggleUI {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 30;
+      background: rgba(40,40,40,0.8);
+      color: #eee;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #toggleUI:hover { background: rgba(60,60,60,0.9); }
   </style>
 </head>
 <body>
+  <button id="toggleUI">Hide UI</button>
+
   <div id="ui">
     <label>Upload Video</label><br>
     <input id="fileInput" type="file" accept="video/*"><br><br>
@@ -67,6 +90,7 @@
     let displayMode = "lines";
     let showVideo = true;
     let w = 160, h = 90; // downsample size
+    let uiVisible = true;
 
     function setup() {
       createCanvas(windowWidth, windowHeight);
@@ -82,6 +106,19 @@
       select('#redQuadrant').changed(e => redQuadrant = +e.target.value);
       select('#displayMode').changed(e => displayMode = e.target.value);
       select('#showVideo').changed(() => showVideo = select('#showVideo').checked());
+
+      const toggleButton = select('#toggleUI');
+      toggleButton.mousePressed(() => {
+        uiVisible = !uiVisible;
+        const ui = select('#ui');
+        if (uiVisible) {
+          ui.removeClass('hidden');
+          toggleButton.html('Hide UI');
+        } else {
+          ui.addClass('hidden');
+          toggleButton.html('Show UI');
+        }
+      });
     }
 
     function handleFile() {
@@ -180,7 +217,7 @@
                 if (displayMode === "lines") {
                   line(px, py, px - dx, py - dy);
                 } else {
-                  point(px - dx, py - dy); // outer tip of line
+                  point(px - dx, py - dy);
                 }
               }
             }
